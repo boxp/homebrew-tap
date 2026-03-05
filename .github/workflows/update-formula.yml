@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   update-formula:
@@ -61,38 +60,14 @@ jobs:
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Check for existing PR (idempotency)
-        id: check
+      - name: Update Formula and push to main
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event.client_payload.version }}
-        run: |
-          BRANCH="update-ceeker-${VERSION}"
-          # Fail on API errors instead of silently continuing
-          if ! PR_JSON=$(gh pr list --head "$BRANCH" --state open --json number 2>&1); then
-            echo "::error::Failed to query existing PRs: ${PR_JSON}"
-            exit 1
-          fi
-          EXISTING_PR=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
-          if [ -n "$EXISTING_PR" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::PR #${EXISTING_PR} already exists for version ${VERSION}, skipping."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update Formula and create PR
-        if: steps.check.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event.client_payload.version }}
           TAG: ${{ github.event.client_payload.tag }}
           SHA_DARWIN_ARM64: ${{ github.event.client_payload.sha_darwin_arm64 }}
           SHA_LINUX_AMD64: ${{ github.event.client_payload.sha_linux_amd64 }}
           SHA_LINUX_ARM64: ${{ github.event.client_payload.sha_linux_arm64 }}
         run: |
-          BRANCH="update-ceeker-${VERSION}"
-
           # Generate formula
           cat > Formula/ceeker.rb << EOF
           # typed: false
@@ -143,49 +118,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Remove stale remote branch if it exists (no open PR at this point)
-          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
-            git push origin --delete "$BRANCH"
-          fi
-
-          git checkout -b "$BRANCH"
           git add Formula/ceeker.rb
 
-          # Skip if formula is already identical
+          # Skip if formula is already identical (idempotency)
           if git diff --cached --quiet; then
-            echo "::notice::Formula already up to date, skipping PR creation."
+            echo "::notice::Formula already up to date for version ${VERSION}, skipping."
             exit 0
           fi
 
           git commit -m "ceeker ${VERSION}"
-          git push origin "$BRANCH"
-
-          PR_BODY="Automated formula update for ceeker ${TAG}.
-
-          - **Version**: ${VERSION}
-          - **Release**: https://github.com/boxp/ceeker/releases/tag/${TAG}
-          - **darwin-arm64 SHA256**: \`${SHA_DARWIN_ARM64}\`
-          - **linux-amd64 SHA256**: \`${SHA_LINUX_AMD64}\`
-          - **linux-arm64 SHA256**: \`${SHA_LINUX_ARM64}\`
-
-          Triggered by \`repository_dispatch\` from \`boxp/ceeker\`."
-
-          gh pr create \
-            --title "ceeker ${VERSION}" \
-            --body "$PR_BODY"
-
-      - name: Enable auto-merge
-        if: steps.check.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event.client_payload.version }}
-        run: |
-          BRANCH="update-ceeker-${VERSION}"
-          if ! PR_JSON=$(gh pr list --head "$BRANCH" --state open --json number 2>&1); then
-            echo "::warning::Failed to query PR for auto-merge: ${PR_JSON}"
-            exit 0
-          fi
-          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
-          if [ -n "$PR_NUMBER" ]; then
-            gh pr merge "$PR_NUMBER" --auto --squash || echo "::warning::Auto-merge could not be enabled (requires branch protection with required status checks)"
-          fi
+          git push origin main

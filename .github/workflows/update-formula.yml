@@ -11,7 +11,7 @@ jobs:
   update-formula:
     runs-on: ubuntu-latest
     concurrency:
-      group: update-ceeker-formula-${{ github.event.client_payload.version }}
+      group: update-ceeker-formula
       cancel-in-progress: false
     steps:
       - name: Validate payload
@@ -127,4 +127,5 @@ jobs:
           fi
 
           git commit -m "ceeker ${VERSION}"
+          git pull --rebase origin main
           git push origin main

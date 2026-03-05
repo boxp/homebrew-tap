@@ -1,0 +1,151 @@
+name: Update Formula
+
+on:
+  repository_dispatch:
+    types: [update-ceeker-formula]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate payload
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          for field in version tag sha_darwin_arm64 sha_linux_amd64 sha_linux_arm64; do
+            value=$(echo "$PAYLOAD" | jq -r ".${field} // empty")
+            if [ -z "$value" ]; then
+              echo "::error::Missing required payload field: ${field}"
+              exit 1
+            fi
+          done
+          echo "Payload validated:"
+          echo "  version: $(echo "$PAYLOAD" | jq -r '.version')"
+          echo "  tag: $(echo "$PAYLOAD" | jq -r '.tag')"
+          echo "  sender: $(echo "$PAYLOAD" | jq -r '.sender')"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Check for existing PR (idempotency)
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          BRANCH="update-ceeker-${VERSION}"
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR #${EXISTING_PR} already exists for version ${VERSION}, skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update Formula and create PR
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.client_payload.version }}
+          TAG: ${{ github.event.client_payload.tag }}
+          SHA_DARWIN_ARM64: ${{ github.event.client_payload.sha_darwin_arm64 }}
+          SHA_LINUX_AMD64: ${{ github.event.client_payload.sha_linux_amd64 }}
+          SHA_LINUX_ARM64: ${{ github.event.client_payload.sha_linux_arm64 }}
+        run: |
+          BRANCH="update-ceeker-${VERSION}"
+
+          # Generate formula
+          cat > Formula/ceeker.rb << EOF
+          # typed: false
+          # frozen_string_literal: true
+
+          class Ceeker < Formula
+            desc "AI Coding Agent session and progress monitoring TUI"
+            homepage "https://github.com/boxp/ceeker"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/boxp/ceeker/releases/download/${TAG}/ceeker-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+
+                def install
+                  bin.install "ceeker-darwin-arm64" => "ceeker"
+                end
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/boxp/ceeker/releases/download/${TAG}/ceeker-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+
+                def install
+                  bin.install "ceeker-linux-amd64" => "ceeker"
+                end
+              end
+              on_arm do
+                url "https://github.com/boxp/ceeker/releases/download/${TAG}/ceeker-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+
+                def install
+                  bin.install "ceeker-linux-arm64" => "ceeker"
+                end
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/ceeker --version")
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Remove stale remote branch if it exists (no open PR at this point)
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            git push origin --delete "$BRANCH"
+          fi
+
+          git checkout -b "$BRANCH"
+          git add Formula/ceeker.rb
+
+          # Skip if formula is already identical
+          if git diff --cached --quiet; then
+            echo "::notice::Formula already up to date, skipping PR creation."
+            exit 0
+          fi
+
+          git commit -m "ceeker ${VERSION}"
+          git push origin "$BRANCH"
+
+          PR_BODY="Automated formula update for ceeker ${TAG}.
+
+          - **Version**: ${VERSION}
+          - **Release**: https://github.com/boxp/ceeker/releases/tag/${TAG}
+          - **darwin-arm64 SHA256**: \`${SHA_DARWIN_ARM64}\`
+          - **linux-amd64 SHA256**: \`${SHA_LINUX_AMD64}\`
+          - **linux-arm64 SHA256**: \`${SHA_LINUX_ARM64}\`
+
+          Triggered by \`repository_dispatch\` from \`boxp/ceeker\`."
+
+          gh pr create \
+            --title "ceeker ${VERSION}" \
+            --body "$PR_BODY"
+
+      - name: Enable auto-merge
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          BRANCH="update-ceeker-${VERSION}"
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr merge "$PR_NUMBER" --auto --squash || echo "::warning::Auto-merge could not be enabled (requires branch protection with required status checks)"
+          fi

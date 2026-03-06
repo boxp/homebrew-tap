@@ -4,13 +4,13 @@
 class Ceeker < Formula
   desc "AI Coding Agent session and progress monitoring TUI"
   homepage "https://github.com/boxp/ceeker"
-  version "0.1.8"
+  version "0.1.9"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/boxp/ceeker/releases/download/v0.1.8/ceeker-darwin-arm64.tar.gz"
-      sha256 "904b6b518f6e189f4af8ef7b56e77e47806d84c513a3b3b034bbfc9ee4ee284a"
+      url "https://github.com/boxp/ceeker/releases/download/v0.1.9/ceeker-darwin-arm64.tar.gz"
+      sha256 "1a553de14aaf106988f8615356e1f8b3d310b4d3a008633cdd3f9678f0321415"
 
       def install
         bin.install "ceeker-darwin-arm64" => "ceeker"
@@ -20,16 +20,16 @@ class Ceeker < Formula
 
   on_linux do
     on_intel do
-      url "https://github.com/boxp/ceeker/releases/download/v0.1.8/ceeker-linux-amd64.tar.gz"
-      sha256 "6a9f43894be756c4a4982cc02a95c69d98beff483edbdc7e137e5c46f143f08f"
+      url "https://github.com/boxp/ceeker/releases/download/v0.1.9/ceeker-linux-amd64.tar.gz"
+      sha256 "a5192879b314b59082a1e44a52d6e3b24d697135c894df73259c744e5931152e"
 
       def install
         bin.install "ceeker-linux-amd64" => "ceeker"
       end
     end
     on_arm do
-      url "https://github.com/boxp/ceeker/releases/download/v0.1.8/ceeker-linux-arm64.tar.gz"
-      sha256 "1319143183334189c5e3d2f3d30ede1b09ba20b15f4f4abd3e1e97b19226e525"
+      url "https://github.com/boxp/ceeker/releases/download/v0.1.9/ceeker-linux-arm64.tar.gz"
+      sha256 "41b98c9702694a83889c6a6bc8e5edf72ccf22a9e7da69b7620d7f5465bc7f37"
 
       def install
         bin.install "ceeker-linux-arm64" => "ceeker"
